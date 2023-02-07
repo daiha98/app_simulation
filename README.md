@@ -15,15 +15,13 @@ git clone https://github.com/daiha98/app_simulation.git
 
 ## Pastas
 
-- [ ] *config* <> Bibliotecas e dependências como funções; envs; configurações adicionais; etc.
-- [ ] *tests* <> Ambiente de testes de scripts.
-- [ ] *prod* <> Código atualmente em produção.
-- [ ] *build* <> Se necessário, scripts de configuração de ambientes produtivos como PowerShell; Docker; etc.
-- [ ] *doc* <> Pasta de documentação para consulta de possíveis FAQs.
-- [ ] *res* <> Local de armazenamento de outputs e arquivos fontes como imagens; pdfs; htmls; logs; etc.
-- [ ] *tools* <> Scripts de automação de tarefas como cron commands & reports em canais de comunicação.
+- [ ] *src* <> Diretório principal de subpastas e códigos. Nele, será armazenado todo o escopo majoritário do projeto.
 
 ## Arquivos
 
-- [ ] *README.md* <> Auxiliar futuros contribuidores no entendimento principal dos repositórios.
-- [ ] *AUTHORS.md* <> Definir os principais colaboradores que construíram as principais etapas dos repositórios.
+- [ ] *.gitattributes* <> Controle de ações no git, passando atributos específicos dentro do repositório;
+- [ ] *.gitignore* <> Intencionalmente direcionar extensões cujo git deve ignorar ao commitar no projeto;
+- [ ] *.pylintrc* <> Regras de clean code para validação de qualidade do código;
+- [ ] *README.md* <> Auxiliar futuros contribuidores no entendimento principal dos repositórios;
+- [ ] *AUTHORS.md* <> Definir os principais colaboradores que construíram as principais etapas dos repositórios;
+- [ ] *requirements.txt* <> Dependências de bibliotecas da aplicação e suas versões utilizadas.
