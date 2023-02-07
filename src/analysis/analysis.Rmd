@@ -1,0 +1,671 @@
+---
+title: "Pipeline <> App Simulações - EDA"
+author: "Felipe Daiha Alves"
+date: '`r format(Sys.Date(), "%Y-%m-%d")`'
+output: 
+  html_document: 
+    fig_width: 16
+    fig_height: 9
+    highlight: monochrome
+---
+\
+
+***
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, comment = NA)
+
+```
+
+```{r environ, include=FALSE}
+
+# Dependencias
+packages <- c(
+  'dotenv', 'log4r', ## Configuracoes iniciais
+  'aws.s3', 'data.table',  ## Carregamento dos dados
+  'dplyr', 'stats', 'tidyr', 'purrr', 'zoo', 'stringr',  ## Manipulacao de Dados
+  'ggplot2', 'scales', 'ggcorrplot', 'kableExtra', 'knitr'  ## Visualizacao de Dados
+)
+    
+# Instalando pacotes (caso ainda nao esteja)
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+    
+# Carregando pacotes
+invisible(lapply(packages, library, character.only=TRUE))
+    
+# Removendo variavel criada previamente
+rm(packages, installed_packages)
+
+# Configuracoes de visualizaco 
+options(digits=10, scipen=999)
+
+# Carregando variaveis de ambiente
+dotenv::load_dot_env(
+  paste0(getwd(), '/.env'))
+
+# Configurando RMarkdown
+base::options(rgl.useNULL=TRUE)
+rgl::setupKnitr(autoprint=TRUE)
+```
+
+```{r logger, include=FALSE}
+
+# Check se arquivo .log ja existe. Caso exista, entao dropar da pasta 'res'
+temp_dir <- paste0(getwd(), '/res/')
+
+if(file.exists(paste0(temp_dir, 'log.log')))
+  unlink(paste0(temp_dir, 'log.log'))
+
+# Atribuindo componentes do logger a variavel
+my_logger <- log4r::logger(
+  threshold="DEBUG", 
+  appenders=list(
+    log4r::console_appender(layout=default_log_layout()),
+    log4r::file_appender(
+      paste0(temp_dir, 'log.log'),
+      append=TRUE, 
+      layout=log4r::default_log_layout())))
+
+## Exps
+# log4r::info(my_logger, "Info_message.") ## Info
+# log4r::error(my_logger, "Error_message") ## Error
+# log4r::debug(my_logger, "Debug_message") ## Debug
+```
+
+```{r functions, include=FALSE}
+
+# Funcoes utilizadas neste markdown
+
+# 1 - get_simulations_s3
+get_simulations_s3 <- function(s3_bucket = 'github-datasets', prefix = 'app_simulation/cleaned'){
+  
+  # Listando objetos no bucket no formato de dataframe e filtrando pelo prefixo passado
+  batch_keys <- aws.s3::get_bucket_df(
+    bucket=s3_bucket
+  )
+
+  batch_keys <- batch_keys %>%
+    dplyr::filter(grepl(prefix, Key))
+
+  # Pegando key do arquivo
+  key <- batch_keys$Key[batch_keys$LastModified==max(batch_keys$LastModified)]
+    
+  # Alertando key a ser carregada na AWS
+  log4r::warn(my_logger, paste0("Key: ", key))
+
+  # Retornando resultado
+  return(key)
+  
+}
+
+# 2 - default_theme
+default_theme <- function(size_text = 10, title_size = 14, strip_text = 8){
+
+    ggplot2::theme(
+        panel.background=element_rect(fill="white"),
+        axis.text.x=element_text(size=size_text),
+        axis.text.y=element_text(size=size_text),
+        axis.title.x=element_text(size=size_text),
+        axis.title.y=element_text(size=size_text),
+        panel.grid.major.x=element_line(colour="lightgrey"),
+        panel.grid.major.y=element_line(colour="lightgrey"),
+        panel.border=element_rect(colour="grey", fill=NA, size=2.0),
+        strip.text.x=element_text(size=strip_text),
+        plot.title=element_text(size=title_size, face="bold"))
+
+}
+
+# 3 - pivot_simulations
+pivot_simulations <- function(data, exclude_cols = c("id", "date")){
+  
+  # Construindo base pivoteada
+  pivot_df <- data %>% 
+    dplyr::select(!exclude_cols) %>%
+        tidyr::drop_na() %>%
+        dplyr::mutate(
+            dplyr::across(
+                c(
+                    dplyr::starts_with("rolling_")
+                ), 
+                ~ifelse(.x >= quantile(.x, 0.98, na.rm=TRUE), quantile(.x, 0.98, na.rm=TRUE), .x)
+            )
+        ) %>%
+        tidyr::pivot_longer(
+          c(
+            dplyr::starts_with("rolling_")
+            )
+        )
+  # Retornando resultado
+  return(pivot_df)
+  
+}
+
+# 4 - yyyy_mm
+yyyy_mm <- function(date){
+    zoo::as.Date(
+      zoo::as.yearmon(
+        as.character(
+          sprintf(
+            "%d-%02d", 
+            lubridate::year(date), lubridate::month(date)
+          )
+        ), "%Y-%m")
+      )
+}
+
+# 5 - density_overtime
+density_overtime <- function(df, filters){
+  
+  # Criando plot de densidade pelo tempo
+  density_plot <- ggplot2::ggplot(
+      data = df %>% 
+        dplyr::filter(
+          stringr::str_detect(
+            name, 
+            filters)
+          ), 
+      aes(
+        x = value,
+        y = forcats::fct_rev(
+          as.character(
+            sprintf(
+              "%d-%02d", 
+              lubridate::year(month_ref), lubridate::month(month_ref)
+            )
+          )
+        ),
+        fill = as.factor(will_simulate_d1))) +
+    ggridges::geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01, gradient_lwd = 1.) +
+    ggridges::theme_ridges(font_size = 15.0, grid = TRUE) +
+    ggplot2::labs(
+      x="Distribution", y="Year-Mon Reference", fill="Will Simulate D+1",
+      title="Relação se cliente simulará amanhã com MMS das variáveis",
+      subtitle = "Segmentado por Mês") +
+    default_theme(strip_text=10) +
+    ggplot2::facet_wrap(~name, scales='free')
+  
+  # Retorno do grafico
+  return(density_plot)
+  
+}
+
+# 6 - ks_analysis
+ks_analysis <- function(data){
+  
+    # Criando coluna de mes na Base principal
+    main_df <- data %>%
+      dplyr::mutate(
+        month_ref = yyyy_mm(date)
+      )
+    
+    # Pivoteando dados
+    pivot_ks <- pivot_simulations(
+        data=main_df,
+        exclude_cols=c("id", "date")
+    )
+    
+    # Criando vetor com nome das variaveis e lista vazia para futuro armazenamento de dados
+    list_rollings <- unique(pivot_ks$name)
+    ks_results <- list()
+    
+    # Loop para calculo do KS
+    for(i in list_rollings){
+        
+        # Filtrando feature
+        iter_ks <- pivot_ks %>%
+            dplyr::filter(grepl(i, name))
+        
+        # Calculando ks para as classes de distribuicoes
+        ks = try(
+            stats::ks.test(
+                x = iter_ks$value[iter_ks$month_ref < max(iter_ks$month_ref)], 
+                y = iter_ks$value[iter_ks$month_ref == max(iter_ks$month_ref)],
+                alternative = "two.sided"))
+        
+        # Salvando dados na lista vazia
+        ks_results[[which(list_rollings==i)]] <- list(
+            stat_value = round(ks[["statistic"]][["D"]], 4),
+            feature = i
+        )
+        
+    }
+    
+    # Convertendo listas em um unico dataframe unificado e ordenando pelo valor do teste
+    ks_results <- data.table::rbindlist(
+        ks_results, use.names = TRUE)
+    
+    ks_results <- ks_results %>%
+      dplyr::arrange(desc(stat_value))
+    
+    # Retornando dataframe criado
+    return(ks_results)
+    
+}
+
+# 7 - table_view
+table_view <- function(view, title){
+  
+    # Parametros de renderizacao da tabela
+    print_view <- knitr::kable(
+      view, caption = paste0("<b>", title, "<b>"), 
+      row.names = TRUE, align = 'c', longtable = T, 
+      table.attr = "style='width:30%;'", format = 'html') %>%
+    kableExtra::kable_styling(full_width = TRUE, position = "center") %>%
+    kableExtra::row_spec(0, bold = TRUE)
+    
+    # Retornando funcao
+    return(print_view)
+    
+  }
+```
+
+```{css, include=FALSE}
+li {
+    list-style-type: circle;
+}
+
+li li {
+    list-style-type: square;
+}
+```
+
+# **Disclaimer**:
+\
+Etapas para elaboração do relatório de análise referente ao processo de **Simulações no App** para avaliação de inatividade de clientes.
+\
+\
+
+***
+
+# **Objetivo**:
+\
+Este relatório contém as etapas de **análise exploratória de dados** para determinação de variáveis relevantes para o futuro processo de modelagem de algoritmos.
+\
+\
+Para avaliação, segue os dados: 
+\
+\
+
+## **1 - Carregando dados**
+\
+Etapa inicial de processamento de dados. Nele, iremos carregar a base de simulações por **cliente/dia útil** disponibilizado via *AWS S3*. Se ocorrer qualquer problema, foi também criado uma cópia local para importação dos dados.
+\
+\
+```{r read_data, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Declarando nome do bucket
+bucket_name <- 'github-datasets'
+
+# Puxando objeto do bucket_s3
+key_df <- get_simulations_s3(
+  s3_bucket=bucket_name)
+
+tryCatch(
+  
+  expr = {
+    
+    # Tentando ler objeto carregado do bucket
+    app_simulations_info <- try(
+      aws.s3::s3read_using(read.csv, object = paste0("s3://", bucket_name, "/", key_df)))
+    
+    # Se tiver ocorrido um erro na leitura, capturar arquivo copia na pasta local
+    if (class(app_simulations_info) == "try-error"){
+      local_path <- "C:/Users/daiha/OneDrive/Documentos/GitHub/datasets/app_simulation/cleaned/"
+      files <- base::list.files(
+        path=local_path, 
+        full.names=FALSE)
+      app_simulations_info <- data.table::fread(
+        paste0(
+          local_path,
+          files
+        )
+      )
+      log4r::info(my_logger, "CSV file loaded from local folder")
+    } else {
+      log4r::info(my_logger, paste0("CSV file loaded from S3 Bucket '", bucket_name, "'"))
+    }
+    
+    # Print da base de dados
+    dplyr::glimpse(app_simulations_info)
+    
+    # Dropando variaveis nao mais utilizadas
+    rm(batch_df, bucket_name, temp_dir, files, local_path)
+  },
+  
+  error = function(e) {
+    
+    # Log de erro
+    log4r::error(my_logger, "Load CSV file from S3 bucket or from local folder failed!")
+    
+  }
+  
+)
+
+```
+\
+\
+
+## **2 - Análise Exploratória de Dados**
+\
+Na fase de *EDA*, iremos nos concentrar em gerar avaliações gráficas e descritivas em relação aos *target* **will_simulate_d1**.
+\
+\
+     <p style="text-align: center;">A) **Histórico Geral**</p>
+\
+Inicialmente, será analisado relações históricas entre as variáveis, de forma a compreender na totalidade o comportamento das features criadas.
+\
+\
+```{r vertical_boxplot, echo=FALSE, message=FALSE, warning=FALSE}
+
+tryCatch(
+  
+  expr = {
+    
+    # Base principal
+    raw_boxplot <- pivot_simulations(data=app_simulations_info)
+    
+    # Gerando grafico para analise
+    plot_vertical_boxplot <- ggplot2::ggplot(raw_boxplot) +
+      ggplot2::geom_boxplot(aes(x=as.factor(will_simulate_d1), y=value)) +
+      ggplot2::labs(
+          x="Will Simulate D+1", y="Rolling Value", 
+          title="Relação se cliente simulará amanhã com MMS das variáveis") +
+      default_theme(strip_text=10) +
+      ggplot2::facet_wrap(~name, scales='free', nrow=5, ncol=4)
+
+    # Print do plot e drop da variavel
+    print(plot_vertical_boxplot)
+    rm(raw_boxplot, plot_vertical_boxplot)
+    
+    # Log do resultado
+    log4r::info(my_logger, "Plot vertical boxplot analysis succesfully done!")
+    
+  },
+  
+  error = function(e) {
+    
+    # Log de erro
+    log4r::error(my_logger, "Something went wrong... Cannot plot vertical boxplot analysis.")
+    
+  }
+  
+)
+
+```
+\
+\
+**Comments:** Essa primeira visão busca compreender as variáveis mais relevantes em nível histórico no seu estado mais bruto, sem transformação nos dados, para diferenciação do target. São elas:
+\
+\
+    <ul>
+        <li> *rolling_avg_income*</li>
+        <li> *rolling_avg_loan_amount*</li>
+        <li> *rolling_sum_approved_on_second_analysis*</li>
+        <li> *rolling_sum_canceled_simulations*</li>
+        <li> *rolling_sum_login_on_app*</li>
+        <li> *rolling_sum_rejected_on_first_analysis*</li>
+        <li> *rolling_sum_simulations*</li>
+        <li> *rolling_sum_rejected_on_second_analysis*</li>
+    </ul>
+\
+\
+```{r corrplot, echo=FALSE, message=FALSE, warning=FALSE}
+
+tryCatch(
+  
+  expr = {
+    
+    # Relacao entre variaveis MMS
+    
+    corr_plot_roll <- ggcorrplot::ggcorrplot(
+      corr=as.data.frame(
+        stats::cor(
+          app_simulations_info %>% 
+            dplyr::select(
+              c(
+                dplyr::starts_with("rolling_")
+              )
+            ) %>%
+            tidyr:: drop_na()), 
+        method="pearson",
+        use="complete.obs",
+        na.rm=TRUE),
+      lab_size=3.0, type="upper", hc.order=TRUE, 
+      lab=TRUE, legend.title="\nGrau\n", digits=1) +
+      ggplot2:: theme(
+        legend.text=element_text(size=12.0),
+        axis.text.x=element_text(size=10, angle=90),
+        axis.text.y=element_text(size=10),
+        panel.border=element_rect(colour="grey", fill=NA, size=1))
+
+  # Print do plot e drop da variavel
+  print(corr_plot_roll)
+  rm(corr_plot_roll)
+    
+  # Log do resultado
+  log4r::info(my_logger, "Corrplot between rolling features succesfully builded!")
+    
+  },
+  
+  error = function(e) {
+    
+  # Log de erro
+  log4r::error(my_logger, "Something went wrong... Cannot plot person correlation analysis.")
+    
+  }
+  
+)
+
+```
+\
+\
+**Comments:** Nesse outra visão, buscamos entender quais variáveis são correlacionadas entre si, para evitar casos de multicolinearidade. A partir das duas análises em conjunto, podemos partir das seguintes premissas:
+\
+\
+    <ul>
+        <li> **Qualidade dos Clientes** (*rolling_avg_income*) - A primeira premissa parte do princípio que clientes mais bem qualificados (alta renda; simulando altos empréstimos) são mais propícios a **aprovação de simulações** e, consequentemente, **melhores condições do financiamento**.</li>
+        <li> **Aprovado em Segunda Análise** (*rolling_sum_approved_on_second_analysis*) - Outra premissa é referente à **aprovação de clientes em segunda instância**. Quando a simulação é reavaliada, há demasiada **interação entre a instituição financeira e o cliente**, no sentido de mensagens trocadas, documentos a serem anexados/esclarecidos, etc. Isso reforça a relação entre as partes. Ao ver que suas simulações de crédito vão sendo aprovadas, há maior procura pela plataforma.</li>
+        <li> **Interação com a Plataforma** (*rolling_sum_login_on_app*) - Por último, e mais intuitivo. Quanto mais **logins** na plataforma, maior a quantidade de cleintes simulando.</li>  
+    </ul>
+\
+\
+```{r ntile_plot, echo=FALSE, message=FALSE, warning=FALSE}
+
+tryCatch(
+  
+  expr = {
+    
+    # Base ntile
+    ntile_simulations <- app_simulations_info %>%
+      dplyr::mutate(
+        dplyr::across(
+            c(
+                dplyr::starts_with("rolling_")
+            ),
+            ~ifelse(.x<=0, NA, .x)
+        )
+    ) %>%
+      dplyr::mutate(
+        dplyr::across(
+            c(
+                dplyr::starts_with("rolling_")
+            ),
+            ~ntile(.x, n=3)
+        )
+    )
+    
+    # Transformacoes para visualizacao
+    ntile_simulations <- ntile_simulations %>%
+        dplyr::select(!c(id, date)) %>%
+        tidyr::pivot_longer(!c(will_simulate_d1)) %>%
+        tidyr::drop_na() %>%
+        dplyr::group_by(will_simulate_d1, name, value) %>%
+        dplyr::count() %>%
+        dplyr::ungroup() %>%
+        dplyr::group_by(name, value) %>%
+        dplyr::mutate(total_per_name=sum(n)) %>%
+        dplyr::mutate(perc=round(n / total_per_name, 2))
+    
+    # Gerando grafico
+    plot_ntile <- ggplot2::ggplot(
+        data=ntile_simulations, 
+        aes(fill=will_simulate_d1, y=perc, x=value)) + 
+        ggplot2::geom_bar(
+            position="dodge",
+            stat="identity") +
+        ggplot2::scale_y_continuous(labels=scales::percent) +
+        ggplot2::geom_text(
+          aes(x=value, y=perc, label=paste0(n)), vjust=1.3,
+          colour='black', fontface='bold', size=3.3,
+          position = position_dodge(width = 0.8)) +
+        ggplot2::labs(
+            x="Ntile",
+            y="Percentage Inside Group", 
+            title="Ntile das Variáveis em Share x Flag de Simulação Amanhã") +
+        default_theme() +
+        ggplot2::facet_wrap(
+            ~name,
+            scales = 'free')
+
+  # Print da base de dados tratada e drop da variavel
+  print(plot_ntile)
+  rm(ntile_simulations, plot_ntile)
+    
+  # Log do resultado
+  log4r::info(my_logger, "Ntile plot succesfully builded!")
+    
+  },
+  
+  error = function(e) {
+    
+  # Log de erro
+  log4r::error(my_logger, "Something went wrong... Cannot build ntile plot analysis.")
+    
+  }
+  
+)
+
+```
+\
+\
+**Comments:** Quando rankeamos/categorizamos nossas variáveis numéricas, podemos encontrar padrões com mais clareza em features que em primeira análise pareciam fracas para discriminação da variável resposta. São exemplo delas e sua explicação:
+\
+\
+    <ul>
+        <li> *rolling_mean_days_first_analysis_first_step* - Quanto maior o tempo entre as etapas, **maior a tendência ao churn** do cliente Isso é lógico, visto que torna-se um processo **burocrático**, enquanto outras instituições de financiamento apresentam seu produto mais acelerado na tomada de decisão das simulações.</li>
+    </ul>
+\
+\
+     <p style="text-align: center;">B) **Efeito Temporal**</p>
+\
+Agora, será estudada o comportamento das variáveis frente ao tempo, sobretudo se há variações/estabilidade de padrões.
+\
+\
+```{r dist_overtime, echo=FALSE, message=FALSE, warning=FALSE}
+
+tryCatch(
+  
+  expr = {
+    
+    # Base principal
+    raw_boxplot_overtime <- pivot_simulations(
+      data=app_simulations_info,
+      exclude_cols=c("id")
+    ) %>%
+      dplyr::mutate(
+        month_ref = yyyy_mm(date)
+      )
+    
+    # Gerando graficos para analise
+    overtime_sums <- density_overtime(raw_boxplot_overtime, "rolling_sum")
+    overtime_means <- density_overtime(raw_boxplot_overtime, "rolling_mean")
+    overtime_avgs <- density_overtime(raw_boxplot_overtime, "rolling_avg")
+
+    # Print do plot e drop da variavel
+    print(overtime_sums)
+    print(overtime_means)
+    print(overtime_avgs)
+    rm(raw_boxplot_overtime, overtime_sums, overtime_means, overtime_avgs)
+    
+    # Log do resultado
+    log4r::info(my_logger, "Plot distribution over months succesfully builded!")
+    
+  },
+  
+  error = function(e) {
+    
+    # Log de erro
+    log4r::error(my_logger, "Something went wrong... Cannot plot distribution over months analysis.")
+    
+  }
+  
+)
+
+```
+\
+\
+**Comments:** Como os dados são influenciados pelo tempo, precisamos compreender os **componentes** que afetam a relação das features com os dias corridos.
+\
+\
+Dentre as variáveis destacadas em análises prévias, **não há fortes evidências** de *shift* temporal nas features. De uma forma geral, as distribuições em relação ao target são **consideravelmente estáveis** no passar dos meses, mostrando um perfil de público similar no decorrer do tempo.
+\
+\
+Para validarmos, será feito o estudo das distribuições pelo *Teste de Kolmogorov-Smirnov*.
+\
+\
+```{r test_ks, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+
+tryCatch(
+  
+  expr = {
+    
+    # Chamando funcao para geracao da analise
+    ks <- ks_analysis(app_simulations_info)
+    
+    # Plotando tabela em layout customizado
+    print(
+      table_view(
+        view=ks,
+        title="Teste de KS - Relação entre Último Mês e Restante dos Dados"
+      )
+    )
+    
+    # Removendo base temporaria
+    rm(ks)
+    
+    # Log do resultado
+    log4r::info(my_logger, "Dataframe with KS test succesfully rendered!")
+    
+  },
+  
+  error = function(e) {
+    
+    # Log de erro
+    log4r::error(my_logger, "Something went wrong... Cannot render dataframe with KS.")
+    
+  }
+  
+)
+
+```
+\
+\
+**Comments:** O teste de KS nos mostra que os dados de treino e teste **não apresentam significativas diferenciações nas distribuições de probabilidade**, indicando que o fator tempo não mostra-se de grande influência para *shift* das variáveis.
+\
+\
+Portanto, este estudo direcionado consegue inferir as seguintes variáveis como **discriminantes** para determinação do *target* escolhido:
+\
+\
+    <ul>
+        <li> *rolling_sum_login_on_app* - Bruto</li>
+        <li> *rolling_avg_loan_amount* - Bruto ou Binário</li>
+        <li> *rolling_sum_simulations* - Bruto</li>
+        <li> *rolling_sum_approved_on_second_analysis* - Bruto</li>
+        <li> *rolling_mean_days_first_analysis_first_step* - Convertido para Ntile (n=3)</li>
+    </ul>
+\
+\
