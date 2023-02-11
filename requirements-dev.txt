@@ -1,0 +1,3 @@
+-r requirements.txt
+pylint==2.16.1.
+nbqa==1.6.1
