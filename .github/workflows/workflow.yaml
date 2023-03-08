@@ -2,10 +2,24 @@ name: App Simulation - CI-CD Pipeline
 
 on: [push]
 
+permissions: write-all
+
 env:
   PROJECT_NAME: "app_simulation"
 
 jobs:
+
+  config:
+    runs-on: ubuntu-latest
+    steps:
+    - name: GitHub Actions Runner
+      uses: actions/checkout@v3.3.0
+    - name: Setup SSH
+      uses: MrSquaare/ssh-setup-action@v2
+      with:
+        host: github.com
+        private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
   validate:
     runs-on: ubuntu-latest
     steps:
