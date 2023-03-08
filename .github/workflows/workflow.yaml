@@ -26,11 +26,12 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: install-dependencies
+    - name: GitHub Actions Runner
+      uses: actions/checkout@v3.3.0
+    - name: Install Dependencies
       run: |
         pip install -r requirements-dev.txt
-    - name: lint-with-Pylint
+    - name: Lint with Pylint
       run: |
         nbqa pylint src
 
