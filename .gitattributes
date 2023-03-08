@@ -3,3 +3,4 @@
 *.html linguist-detectable=false
 *.py linguist-detectable=true
 *.ipynb linguist-detectable=true
+*.tf linguist-detectable=true
