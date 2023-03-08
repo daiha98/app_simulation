@@ -5,7 +5,10 @@ on: [push]
 permissions: write-all
 
 env:
-  PROJECT_NAME: "app_simulation"
+  
+  PROJECT_NAME: "app-simulation"
+  AWS_REGION: "us-east-1"
+  ECR_REPOSITORY: "daiha98_ecr_production"
 
 jobs:
 
@@ -23,10 +26,67 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: install-dependencies
+    - name: GitHub Actions Runner
+      uses: actions/checkout@v3.3.0
+    - name: Install Dependencies
       run: |
         pip install -r requirements-dev.txt
-    - name: lint-with-Pylint
+    - name: Lint with Pylint
       run: |
         nbqa pylint src
+
+  build:
+    runs-on: ubuntu-latest
+    if: |
+      github.ref == 'refs/heads/main'
+    needs: validate
+    environment: production
+    steps:
+    - name: GitHub Actions Runner
+      uses: actions/checkout@v3.3.0
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+    - name: Build, tag and push Docker image to Amazon ECR 
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+        IMAGE_TAG: "latest"
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./terraform
+    if: |
+      github.ref == 'refs/heads/main'
+    needs: build
+    environment: production
+    steps:
+    - name: GitHub Actions Runner
+      uses: actions/checkout@v3.3.0
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v1
+    - name: Terraform Plan
+      run: |
+        terraform init -backend-config "key=production/${{ env.PROJECT_NAME }}/terraform.tfstate"
+        terraform plan --var region=${{ env.AWS_REGION }} --var project=${{ env.PROJECT_NAME }} --var github_token=${{ secrets.TF_VAR_GITHUB_TOKEN }} --var ecr_name=${{ env.ECR_REPOSITORY }} -out tfplan.out
+    - name: Terraform Apply
+      run: |
+        terraform init -backend-config "key=production/${{ env.PROJECT_NAME }}/terraform.tfstate"
+        terraform apply -auto-approve tfplan.out

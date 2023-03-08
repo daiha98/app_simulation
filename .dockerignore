@@ -1,0 +1,4 @@
+/terraform/
+/.github/
+.pylintrc
+README.md
