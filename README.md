@@ -1,52 +1,53 @@
 # app_simulation
 
-## Objetivo
+## Goal
 
-Projeto direcionado à criação de **modelo** de *Machine Learning* para previsão de **simulação de clientes** em aplicativos bancários.
+Project aimed at creating a *Machine Learning model* to predict if a client **will simulate** in a bank app.
 
-## Colabore
+## Cooperate
 
-- [ ] Siga os passos através do seu terminal utilizando a seguinte lógica:
+- [ ] Follow the steps through your terminal using the following logic:
 
 ```linux
 cd to/folder/path
 git clone https://github.com/daiha98/app_simulation.git
 ```
 
-## Pastas
+## Folders
 
-- [ ] *src* <> Diretório principal de subpastas e códigos. Nele, será armazenado todo o escopo majoritário do projeto.
+- [ ] *src* <> Main directory of subfolders and codes. In it, the entire major scope of the project will be stored..
 
-## Arquivos
+## Files
 
-- [ ] *.gitattributes* <> Controle de ações no git, passando atributos específicos dentro do repositório;
-- [ ] *.gitignore* <> Intencionalmente direcionar extensões cujo git deve ignorar ao commitar no projeto;
-- [ ] *.pylintrc* <> Regras de clean code para validação de qualidade do código;
-- [ ] *README.md* <> Auxiliar futuros contribuidores no entendimento principal dos repositórios;
-- [ ] *AUTHORS.md* <> Definir os principais colaboradores que construíram as principais etapas dos repositórios;
-- [ ] *requirements.txt* <> Dependências de bibliotecas da aplicação e suas versões utilizadas.
+- [ ] *.gitattributes* <> Control actions in git, passing specific attributes inside the repository;
+- [ ] *.gitignore* <> Intentionally targeting extensions that git should ignore when committing to the project;
+- [ ] *.pylintrc* <> Clean code rules for code quality validation;
+- [ ] *HOW_TO_VIEW_HTML.md* <> Step by step for analysis of code outputs in HTML format;
+- [ ] *README.md* <> Help future contributors in the main understanding of this repository;
+- [ ] *AUTHORS.md* <> Credits to collaborators who actively participated in this project;
+- [ ] *requirements.txt/requirements-{step}.txt* <> Library dependencies and their used versions.
 
-## Dicionário do Dataset´
+## About the Dataset
 
-OBS: Todas as features nomeadas *rolling* são baseadas em Médias Móveis Simples (MMS) de 22 períodos.
+PS: All features named *rolling* are based on 22-period Simple Moving Averages (SMM).
 
-- **id** - ID do Cliente;
-- **date** - Dia útil de simulação;
-- **rolling_sum_login_on_app** - MMS do total de vezes em que o cliente logou na plataforma;
-- **rolling_sum_simulations** - MMS do total de vezes em que o cliente simulou na plataforma;
-- **rolling_avg_income** - MMS da média de renda cadastrada pelos clientes no app;
-- **rolling_avg_loan_amount** - MMS da média do valor simulado no app para empréstimo;
-- **rolling_sum_rejected_on_first_analysis** - MMS do total de vezes que o cliente foi negado em primeira análise pela instituição financeira;
-- **rolling_sum_approved_on_first_analysis** - MMS do total de vezes que o cliente foi aprovado em primeira análise pela instituição financeira;
-- **rolling_sum_sent_to_second_analysis** - MMS do total de vezes que o cliente foi enviado para segunda análise pela instituição financeira;
-- **rolling_sum_approved_on_second_analysis** - MMS do total de vezes que o cliente foi enviado para segunda análise pela instituição financeira e foi aprovado;
-- **rolling_sum_rejected_on_second_analysis** - MMS do total de vezes que o cliente foi enviado para segunda análise pela instituição financeira e foi negado;
-- **rolling_mean_hours_simulation_second_analysis** - MMS da média de horas entre a etapa de simulação e o resultado da segunda análise (se tiver sido enviado);
-- **rolling_sum_sent_to_first_step_after_analysis** - MMS do total de vezes que o cliente prosseguiu para a primeira fase após a simulação;
-- **rolling_mean_days_first_analysis_first_step** - MMS da média de dias entre a análise da simulação (primeira ou segunda, caso exista) e a primeira fase após a simulação;
-- **rolling_sum_second_step** - MMS do total de vezes que o cliente prosseguiu para a segunda fase após a simulação;
-- **rolling_mean_days_first_step_second_step** - MMS da média de dias entre a primeira fase após a simulação e segunda fase;
-- **rolling_sum_final_step** - MMS do total de vezes que o cliente prosseguiu para fase final após a simulação;
-- **rolling_mean_days_second_step_final_step** - MMS da média de dias entre a segunda fase após a simulação e fase final;
-- **rolling_sum_final_step** - MMS do total de vezes que o cliente cancelou as simulações realizadas;
-- **will_simulate_d1** - Flag booleana (True/False) se cliente simulou no dia útil seguinte a data de referência.
+- **id** - Client ID;
+- **date** - Simulation business day;
+- **rolling_sum_login_on_app** - SMM of the total number of times the customer logged into the app platform;
+- **rolling_sum_simulations** - SMM of the total number of times the customer simulated in the app;
+- **rolling_avg_income** - SMM of the average income registered by customers in the app;
+- **rolling_avg_loan_amount** - SMM of the average simulated value for the loan;
+- **rolling_sum_rejected_on_first_analysis** - SMM of the total number of times the customer was denied in the first analysis by the financial institution;
+- **rolling_sum_approved_on_first_analysis** - SMM of the total number of times the customer was approved in the first analysis by the financial institution;
+- **rolling_sum_sent_to_second_analysis** - SMM of the total number of times the customer was sent to a second analysis by the financial institution;
+- **rolling_sum_approved_on_second_analysis** - SMM of the total number of times the customer was approved in the second analysis by the financial institution;
+- **rolling_sum_rejected_on_second_analysis** - SMM of the total number of times the customer was denied in the second analysis by the financial institution;
+- **rolling_mean_hours_simulation_second_analysis** - SMM of the average number of hours between the simulation step and the result of the second analysis (if sent);
+- **rolling_sum_sent_to_first_step_after_analysis** - SMM of the total number of times the customer proceeded to the first phase after the simulation;
+- **rolling_mean_days_first_analysis_first_step** - SMM of the average days between the simulation analysis (first or second, if any) and the first phase after the simulation;
+- **rolling_sum_second_step** - SMM of the total number of times the client proceeded to the second phase after the simulation;
+- **rolling_mean_days_first_step_second_step** - SMM of the average days between the first phase after the simulation and the second phase;
+- **rolling_sum_final_step** - SMM of the total number of times the client proceeded to the final phase after the simulation;
+- **rolling_mean_days_second_step_final_step** - SMM of the average days between the second phase after the simulation and the final phase;
+- **rolling_sum_final_step** - SMM of the total number of times the customer canceled the simulations performed;
+- **will_simulate_d1** - Bool feature (True/False) if the customer simulated the business day following the reference date.
