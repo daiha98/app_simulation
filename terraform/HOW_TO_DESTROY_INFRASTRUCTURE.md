@@ -2,7 +2,7 @@
 
 ## Tutorial
 
-Se não desejar dar continuidade a infraestrutura construída com o *Terraform*, basta aplicar os seguintes comandos:
+If you do not want to continue the infrastructure built with *Terraform*, just apply the following commands:
 
 ```linux
 cd to/folder/path/terraform
